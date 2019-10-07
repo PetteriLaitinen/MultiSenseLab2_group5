@@ -1,0 +1,156 @@
+int sensorPin[4] = {A0, A1, A2, A3}; // select the input pin for LDR
+
+int averages[4];  //average value of each sensor
+int vars[4];      //Variance of each sensor
+int histValue[4][100];  //Last 100 reading of each sensor
+int pointer = 0;        //Points to the first reading
+int sensorValue[4] = {0,0,0,0}; // variable to store the value coming from the sensors
+int average, var  = 0;  //Average and varians of last sensor readings
+int sensors = 4;        //Number of sensors
+boolean sensorMask[4] = {true, true, true, true};  // mask to mark faulty sensor(s). true means sensor is assumed to work properly.
+int varThreshold = 1000;    //threshold for four sensors variance
+int variancesThreshold = 1000;  //threshold for single sensor's variance
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600); //sets serial port for communication
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+  // read the values from the sensors
+  for (int i = 0; i < sensors; i++) {
+    sensorValue[i] = analogRead(sensorPin[i]); 
+  }
+
+  //Calculate average & variance
+  average = round((sensorValue[0] + sensorValue[1] + sensorValue[2] + sensorValue[3])/4);
+  var = round((pow((average-sensorValue[0]),2) + pow((average-sensorValue[1]),2) + pow((average-sensorValue[2]),2) + pow((average-sensorValue[3]),2))/4);
+
+  //Store history
+  for (int i = 0; i < sensors; i++) {
+    histValue[i][pointer] = sensorValue[i]; 
+  }
+
+  //change pointer to the first reading
+  pointer++;
+  pointer = pointer % 100;
+
+  //calculate average and variance of each sensor from their last 100 readings
+  calcAveVar();
+
+  //detect faulty sensor(s)
+  detectError();
+
+  //Print out reading and calculated values
+  //printReadings();
+
+  //Print sensorMask and output of the system
+  printOutput();
+  
+  delay(100);
+
+}
+
+//Calculate running average and variance of each sensor
+//Order of values is irrelevant so we can simply go through the array
+void calcAveVar() {
+  for(int sensor = 0; sensor < sensors; sensor++) {
+    long sum = 0;
+    float sum2 = 0;
+    int ave = 0;
+    int dev = 0;
+    for(int i=0; i<100; i++) {
+      sum += histValue[sensor][i];
+    }
+    ave = round(sum/100);
+    for(int i=0; i<100; i++) {
+      sum2 += pow(ave - histValue[sensor][i], 2);
+    }
+    dev = round(sum2/100);
+    averages[sensor] = ave;
+    vars[sensor] = dev;
+  }
+}
+
+//Mask sensor(s) that show erroneous or suspicious values
+void detectError(){
+  //Set mask to true
+  for (int i = 0; i < sensors; i++) {
+      sensorMask[i] = true; 
+    }
+  //Check for high variance - indicator of erroneous or unreliable sensor reading
+  if (var > varThreshold) {
+    //There's a bad sensor
+    int stDev = round(sqrt(var)*1.5);
+    for (int i = 0; i < sensors; i++) {
+      if (abs(average-sensorValue[i]) > stDev) {
+        sensorMask[i] = false;
+        //Serial.print("There's a bad sensor: ");
+        //Serial.println(i);
+      }
+    }
+  }
+
+  //If variance of a sensor changes, something is happening to the sensor and it's reliability
+  //needs to be assessed
+  for (int i = 0; i < sensors; i++) {
+    if (vars[i] > variancesThreshold) sensorMask[i] = false;
+  }
+
+    
+}
+
+// Gives avarage reading of sensors judged to be reliable
+int output() {
+  int sum = 0;
+  int workingSensors = 0;
+  for (int i=0; i < sensors; i++) {
+    sum += (sensorMask[i]? sensorValue[i] : 0);
+    workingSensors += (sensorMask[i]? 1 : 0);
+  }
+  //return average of working sensors
+  return round(sum / workingSensors);
+}
+
+void printReadings() {
+  //Test printouts
+  Serial.print(sensorValue[0]); //prints the values coming from the sensor on the screen
+  Serial.print(" ");
+  Serial.print(sensorValue[1]);
+  Serial.print(" ");
+  Serial.print(sensorValue[2]);
+  Serial.print(" ");
+  Serial.print(sensorValue[3]);
+  Serial.print("      ");
+  Serial.print(average);
+  Serial.print(" ");
+  Serial.print(var);
+  Serial.print("      ");
+  Serial.print(averages[0]); //prints the values coming from the sensor on the screen
+  Serial.print(" ");
+  Serial.print(averages[1]);
+  Serial.print(" ");
+  Serial.print(averages[2]);
+  Serial.print(" ");
+  Serial.print(averages[3]);
+  Serial.print("              ");
+  Serial.print(vars[0]);
+  Serial.print(" ");
+  Serial.print(vars[1]);
+  Serial.print(" ");
+  Serial.print(vars[2]);
+  Serial.print(" ");
+  Serial.print(vars[3]);
+  Serial.println(" ");
+}
+
+void printOutput() {
+  Serial.print("sensor mask: ");
+  for (int i = 0; i < sensors; i++) {
+    Serial.print(sensorMask[i]);
+  }
+  Serial.print(" ");
+  Serial.println(output());
+}
